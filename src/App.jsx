@@ -6,7 +6,9 @@ function App() {
   return (
     <>
       <div className="bg-primaryBg-default h-screen flex">
-        <SideBar/>
+        <div className="xl:block hidden">  {/* to len hien ra, nho lai an di, co che cua tailwind la mobile first*/}
+          <SideBar/>
+        </div>
         <Outlet />
       </div>
     </>
