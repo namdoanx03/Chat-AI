@@ -1,12 +1,12 @@
-import { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useEffect, useRef, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 import ImgTemp from "../assets/temp.jpeg";
 import IconMenu from "../assets/menu.png";
 import SideBar from "../components/SideBar";
 import IconStar from "../assets/star.png";
 import Gemini from "../gemini";
 import { useDispatch, useSelector } from "react-redux";
-import { addMessage, setNameChat } from "../store/chatSlice";
+import { addMessage, setNameChat, addChat } from "../store/chatSlice";
 
 const ChatDetail = () => {
   const [menuToggle, setMenuToggle] = useState(true);
@@ -17,29 +17,62 @@ const ChatDetail = () => {
   const { data } = useSelector((state) => state.chat);
   const dispatch = useDispatch();
 
-  const [lastMessage, setLastMessage] = useState("")
+  const [lastMessage, setLastMessage] = useState("");
+  const endOfMessagesRef = useRef(null); // Ref to scroll to the end of messages
+
+  const navigate = useNavigate();
 
   useEffect(() => {
     if (data.length > 0) {
       const chat = data.find((chat) => chat.id === id);
       if (chat) {
         setDataDetail(chat);
-        setMessageDetail(chat.messages)
+        setMessageDetail(chat.messages);
       }
     }
   }, [data, id]);
 
+  useEffect(() => {
+    // Scroll to the end whenever a new message is added
+    if (endOfMessagesRef.current) {
+      endOfMessagesRef.current.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [messageDetail]); // Run whenever messageDetail changes
+
   const handleChatDetail = async () => {
-    if(!inputChat.trim() || inputChat === lastMessage){
-      return //khong lam gi ca neu tin nhan trong hoac trung lap
+    if (!inputChat.trim() || inputChat === lastMessage) {
+      return; // Avoid doing anything if the input is empty or the same as the last message
     }
 
-    if (id) {
+    if (!id) {
+      // If no chat ID exists, create a new chat
+      dispatch(addChat()); // Create a new chat
+      const newChat = data[data.length - 1]; // Get the newly added chat
+      setDataDetail(newChat); // Update state with the new chat
+      setMessageDetail(newChat.messages); // Set messages for the new chat
+
+      // Navigate to the newly created chat
+      navigate(`/chat/${newChat.id}`);
+
+      // Generate a response using Gemini for the new chat
+      const chatText = await Gemini(inputChat, []); // Empty array since it's a new chat
+      const dataMessage = {
+        idChat: newChat.id,
+        userMess: inputChat,
+        botMess: chatText,
+      };
+
+      // Dispatch message and update chat state
+      dispatch(addMessage(dataMessage));
+      setInputChat(""); // Clear the input field
+      setLastMessage(inputChat); // Update the last message state
+    } else {
+      // If there is a chat ID, proceed as usual
       const chatText = await Gemini(inputChat, messageDetail);
-      if(dataDetail.title === 'Chat'){
-        const promptName = `This is a new chat, and user ask about ${inputChat}. No rely and comment just give me a name for this chat, Max length is 10 characters`;
-        const newTitle = await Gemini(promptName)
-        dispatch(setNameChat({newTitle, chatId: id}))
+      if (dataDetail.title === "Chat") {
+        const promptName = `This is a new chat, and user ask about ${inputChat}. No reply and comment just give me a name for this chat, Max length is 10 characters`;
+        const newTitle = await Gemini(promptName);
+        dispatch(setNameChat({ newTitle, chatId: id }));
       }
       if (chatText) {
         const dataMessage = {
@@ -49,8 +82,8 @@ const ChatDetail = () => {
         };
 
         dispatch(addMessage(dataMessage));
-        setInputChat("");
-        setLastMessage(inputChat) //cap nhat tin nhan cuoi cung
+        setInputChat(""); // Clear the input field
+        setLastMessage(inputChat); // Update the last message state
       }
     }
   };
@@ -61,7 +94,12 @@ const ChatDetail = () => {
         <button onClick={() => setMenuToggle(!menuToggle)}>
           <img src={IconMenu} alt="menu icon" className="w-8 h-8 xl:hidden" />
         </button>
-        <h1 className="text-xl uppercase font-bold ">Gemini</h1>
+        <h1
+          className="text-xl uppercase font-bold cursor-pointer"
+          onClick={() => navigate("/chat")}
+        >
+          Gemini
+        </h1>
       </div>
       {menuToggle && (
         <div className="absolute h-full top-0 left-0 xl:hidden">
@@ -89,6 +127,7 @@ const ChatDetail = () => {
                   </div>
                 </div>
               ))}
+            <div ref={endOfMessagesRef} />{" "}
           </div>
         ) : (
           <div className="flex flex-col space-y-5">
@@ -98,7 +137,7 @@ const ChatDetail = () => {
               </h2>
               <p className="text-3xl">Hôm nay tôi có thể giúp gì cho bạn</p>
             </div>
-            <div className="flex items-center space-x-3">
+            <div className="flex items-center space-x-3 text-center">
               <div className="w-[200px] h-[200px] bg-primaryBg-sideBar flex items-center justify-center rounded-lg">
                 <p>Lên kế hoạch bữa ăn</p>
               </div>
@@ -115,26 +154,30 @@ const ChatDetail = () => {
             </div>
           </div>
         )}
-        <div className="flex items-center space-x-4 w-full">
-          <input
-            type="text"
-            value={inputChat}
-            placeholder="Nhập câu lệnh tại đây"
-            className="p-4 rounded-lg bg-primaryBg-default w-[90%] border "
-            onChange={(e) => setInputChat(e.target.value)}
-            onKeyDown={(e) =>{
-              if(e.key === "Enter"){
-                handleChatDetail()
-              }
-            }}
-          />
-          <button
-            className="p-4 rounded-lg bg-green-500 text-white"
-            onClick={handleChatDetail}
-          >
-            Gửi
-          </button>
-        </div>
+
+        {/* Conditionally render the input and send button when in a chat */}
+        {id && (
+          <div className="flex items-center space-x-4 w-full ">
+            <input
+              type="text"
+              value={inputChat}
+              placeholder="Nhập câu lệnh tại đây"
+              className="p-4 rounded-lg bg-primaryBg-default w-[90%] border "
+              onChange={(e) => setInputChat(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  handleChatDetail();
+                }
+              }}
+            />
+            <button
+              className="p-4 rounded-lg bg-green-500 text-white"
+              onClick={handleChatDetail}
+            >
+              Gửi
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
